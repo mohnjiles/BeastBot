@@ -29,9 +29,9 @@ namespace DiscordBot
         private DiscordClient _client;
         private DatabaseManager _databaseManager;
         private CancellationTokenSource _tokenSource;
-        private List<string> _metaNames; 
+        private List<string> _metaNames;
 
-        private bool _tts; 
+        private bool _tts;
 
 
         public async void Start()
@@ -39,7 +39,7 @@ namespace DiscordBot
             _client = new DiscordClient();
             _databaseManager = new DatabaseManager();
             _tokenSource = new CancellationTokenSource();
-            _metaNames = new List<string> {"chak", "octovine", "verdant brink", "dragon's stand"};
+            _metaNames = new List<string> { "chak", "octovine", "verdant brink", "dragon's stand" };
 
             _client.UsingCommands(x =>
             {
@@ -83,6 +83,7 @@ namespace DiscordBot
                 {
                     var items = new[] { "[&AgEqMABAuV8AAA=]", "[&AgHbLwBAuV8AAA=]" };
 
+                    await e.Channel.SendTTSMessage("Did somebody say penetration?");
                     await e.Channel.SendMessage(items[new Random().Next(0, 2)]);
                 });
 
@@ -128,6 +129,52 @@ namespace DiscordBot
                     }
                 });
 
+            _client.GetService<CommandService>().CreateCommand("ceddy")
+                .Alias("c")
+                .Description("Ceddy Ehehehe")
+                .Hide()
+                .Do(async e =>
+                {
+                    var users = e.Server.Users;
+
+                    foreach (var user in users.Where(user => user.Name.ToLower().Contains("ceddy")))
+                    {
+                        try
+                        {
+                            if (e.User.Roles.FirstOrDefault(x => x.Name == "mod") != null)
+                                await user.Edit(true, true, user.VoiceChannel, user.Roles, user.Nickname);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex.Message);
+                        }
+                        break;
+                    }
+                });
+
+            _client.GetService<CommandService>().CreateCommand("unceddy")
+                .Alias("unc")
+                .Description("Ceddy Ehehehe")
+                .Hide()
+                .Do(async e =>
+                {
+                    var users = e.Server.Users;
+
+                    foreach (var user in users.Where(user => user.Name.ToLower().Contains("ceddy")))
+                    {
+                        try
+                        {
+                            if (user == e.User) return;
+                            await user.Edit(false, false, user.VoiceChannel, user.Roles, user.Nickname);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex.Message);
+                        }
+                        break;
+                    }
+                });
+
             _client.GetService<CommandService>().CreateCommand("tts")
                 .Description("Toggle on/off TTS announcement of boss messages")
                 .Parameter("status", ParameterType.Unparsed)
@@ -138,6 +185,29 @@ namespace DiscordBot
                         _tts = true;
                     else if (statusText.Contains("off") || statusText.Contains("no") || statusText.Contains("false"))
                         _tts = false;
+                });
+
+            _client.GetService<CommandService>().CreateCommand("mute")
+                .Description("Mute a player by name")
+                .Alias("m")
+                .Parameter("name", ParameterType.Unparsed)
+                .Do(async e =>
+                {
+                    if (e.User.Roles.FirstOrDefault(x => x.Name == "mod") == null) return;
+
+                    var name = e.Args.FirstOrDefault();
+                    var user = e.Channel.Users.FirstOrDefault(x => x.Name.ToLower().Contains(name));
+                    if (user != null)
+                    {
+                        try
+                        {
+                            await user.Edit(!user.IsServerMuted, user.IsServerDeafened, user.VoiceChannel, user.Roles);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex);
+                        }
+                    }
                 });
 
             _client.GetService<CommandService>().CreateCommand("boss")

@@ -59,11 +59,22 @@ namespace DiscordBot
 
             _client.GetService<CommandService>().CreateCommand("roll")
                 .Description("Rolls 1-100")
+                .Parameter("max", ParameterType.Unparsed)
                 .Do(async e =>
                 {
                     var random = new Random();
                     var name = string.IsNullOrEmpty(e.User.Nickname) ? e.User.Name : e.User.Nickname;
-                    await e.Channel.SendMessage($"{name} rolled {Format.Bold($"{random.Next(1, 100)}")}");
+
+                    var max = e.Args.FirstOrDefault();
+
+                    if (string.IsNullOrWhiteSpace(max))
+                        await e.Channel.SendMessage($"{name} rolled {Format.Bold($"{random.Next(1, 101)}")}");
+                    else
+                    {
+                        var maxRoll = 0;
+                        int.TryParse(max, out maxRoll);
+                        await e.Channel.SendMessage($"{name} rolled {Format.Bold($"{random.Next(1, maxRoll + 1)}")}");
+                    }
                 });
 
             _client.GetService<CommandService>().CreateCommand("item")
@@ -309,7 +320,14 @@ namespace DiscordBot
             {
                 while (!_tokenSource.IsCancellationRequested)
                 {
-                    await _databaseManager.UpdateDatabase();
+                    try
+                    {
+                        await _databaseManager.UpdateDatabase();
+                    }
+                    catch (Exception)
+                    {
+                        // ignored
+                    }
                     Thread.Sleep(300000);
                 }
             }, _tokenSource.Token, TaskCreationOptions.LongRunning);

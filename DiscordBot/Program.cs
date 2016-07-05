@@ -16,6 +16,7 @@ using Discord.Audio;
 using Discord.Commands;
 using DiscordBot.Properties;
 using Humanizer;
+using Newtonsoft.Json;
 using RestSharp;
 using RestSharp.Extensions.MonoHttp;
 using ParameterType = Discord.Commands.ParameterType;
@@ -33,6 +34,8 @@ namespace DiscordBot
 
         private bool _tts;
 
+        public List<Reminder> Reminders { get; set; }
+
 
         public async void Start()
         {
@@ -40,6 +43,9 @@ namespace DiscordBot
             _databaseManager = new DatabaseManager();
             _tokenSource = new CancellationTokenSource();
             _metaNames = new List<string> { "chak", "octovine", "verdant brink", "dragon's stand" };
+
+            Reminders = LoadReminders();
+            StartRemindersTask();
 
             _client.UsingCommands(x =>
             {
@@ -299,10 +305,51 @@ namespace DiscordBot
 
                 });
 
+            _client.GetService<CommandService>().CreateCommand("reminder")
+                .Alias("remind", "r")
+                .Description(
+                    "Set a reminder for a world boss spawn. Format is !r <minutes before boss spawns that you'd like a reminder> <boss name>")
+                .Parameter("Time", ParameterType.Optional)
+                .Parameter("BossName", ParameterType.Unparsed)
+                .Do(async e =>
+                {
+                    var args = e.Args;
+                    var minutes = args.Length > 1 ? int.Parse(e.Args[0]) : 15;
+                    var bossName = args.Length > 1 ? e.Args[1] : e.Args[0];
+                    bossName = bossName.ToLower();
+
+
+                    var worldBoss =
+                                WorldBosses.OrderBy(t => (t.Start - DateTime.Now).Duration())
+                                    .FirstOrDefault(x => x.EventName.ToLower().Contains(bossName));
+
+
+                    var reminder = new Reminder
+                    {
+                        BossName = bossName,
+                        User = e.User.Mention,
+                        ReminderTime = worldBoss.Start.AddMinutes(-minutes)
+                    };
+
+                    Reminders.Add(reminder);
+                    var json = JsonConvert.SerializeObject(Reminders);
+                    File.WriteAllText("reminders.json", json);
+
+                    await e.Channel.SendMessage($"Reminder confirmed: {worldBoss.EventName} at {reminder.ReminderTime}");
+                });
+
             _client.ExecuteAndWait(async () =>
             {
                 await Connect();
             });
+        }
+
+        private List<Reminder> LoadReminders()
+        {
+            if (!File.Exists("reminders.json")) File.Create("reminders.json").Close();
+
+            var json = File.ReadAllText("reminders.json");
+            return JsonConvert.DeserializeObject<List<Reminder>>(json) ?? new List<Reminder>();
         }
 
         private async Task Connect()
@@ -312,6 +359,47 @@ namespace DiscordBot
             StartDatabaseUpdateTask();
             StartWorldBossUpdateTask();
             Console.WriteLine("World bosses loaded");
+        }
+
+
+        private void StartRemindersTask()
+        {
+            var task = new Task(() =>
+            {
+                while (!_tokenSource.IsCancellationRequested)
+                {
+                    DoReminders();
+                    Thread.Sleep(30000);
+                }
+            }, _tokenSource.Token, TaskCreationOptions.LongRunning);
+
+            task.Start();
+        }
+
+        private void DoReminders()
+        {
+            Reminders = LoadReminders();
+
+            Reminder reminderToRemove = null;
+
+            foreach (var reminder in Reminders)
+            {
+                if (DateTime.Now.Hour == reminder.ReminderTime.Hour && DateTime.Now.Minute == reminder.ReminderTime.Minute)
+                {
+                    var server = _client.FindServers("aegis of flame").FirstOrDefault();
+                    var user = server.Users.FirstOrDefault(x => x.Mention == reminder.User);
+                    var worldBoss =
+                        WorldBosses.OrderBy(t => (t.Start - DateTime.Now).Duration())
+                            .FirstOrDefault(x => x.EventName.ToLower().Contains(reminder.BossName));
+
+                    user?.SendMessage($"Hey, {reminder.BossName} is starting {worldBoss.Start.Humanize(false)}");
+
+                    reminderToRemove = reminder;
+                }
+            }
+
+            Reminders.Remove(reminderToRemove);
+            File.WriteAllText("reminders.json", JsonConvert.SerializeObject(Reminders));
         }
 
         private void StartDatabaseUpdateTask()

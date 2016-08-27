@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Speech.Synthesis;
 using System.Text;
 using System.Threading;
@@ -14,12 +15,13 @@ using CsvHelper;
 using Discord;
 using Discord.Audio;
 using Discord.Commands;
-using DiscordBot.Properties;
 using Humanizer;
 using Newtonsoft.Json;
+using POGOProtos.Map.Fort;
 using RestSharp;
 using RestSharp.Extensions.MonoHttp;
 using ParameterType = Discord.Commands.ParameterType;
+using Resources = DiscordBot.Properties.Resources;
 
 namespace DiscordBot
 {
@@ -338,9 +340,129 @@ namespace DiscordBot
                     await e.Channel.SendMessage($"Reminder confirmed: {worldBoss.EventName} at {reminder.ReminderTime}");
                 });
 
-            _client.ExecuteAndWait(async () =>
+            _client.GetService<CommandService>().CreateCommand("daily")
+                .Alias("d", "showmethe_d", "showmethed")
+                .Description("Shows daily achievement things")
+                .Do(e =>
+                {
+                    using (var client = new WebClient())
+                    {
+                        client.DownloadStringAsync(new Uri("https://api.guildwars2.com/v2/achievements/daily"));
+                        client.DownloadStringCompleted += async (sender, args) =>
+                        {
+                            var achievements = JsonConvert.DeserializeObject<DailyAchievements>(args.Result);
+                            var pveIds = achievements.Pve.Select(x => x.Id);
+                            var pvpIds = achievements.Pvp.Select(x => x.Id);
+                            var wvwIds = achievements.Wvw.Select(x => x.Id);
+
+                            var sb = new StringBuilder();
+
+                            await Task.Run(async () =>
+                            {
+
+                                var pveAchievements = await GetAchievementsByIdsAsync(pveIds);
+                                var pvpAchievements = await GetAchievementsByIdsAsync(pvpIds);
+                                var wvwAchievements = await GetAchievementsByIdsAsync(wvwIds);
+
+
+                                sb.Append("__**PvE Dailies**__");
+                                sb.AppendLine();
+                                sb.AppendLine();
+
+                                foreach (var achievement in pveAchievements)
+                                {
+                                    sb.Append($"{achievement.Name}");
+                                    sb.AppendLine();
+                                }
+
+                                sb.AppendLine();
+                                sb.Append("__**PvP Dailies**__");
+                                sb.AppendLine();
+                                sb.AppendLine();
+
+                                foreach (var achievement in pvpAchievements)
+                                {
+                                    sb.Append($"{achievement.Name}");
+                                    sb.AppendLine();
+                                }
+
+                                sb.AppendLine();
+                                sb.Append("__**WvW Dailies**__");
+                                sb.AppendLine();
+                                sb.AppendLine();
+
+                                foreach (var achievement in wvwAchievements)
+                                {
+                                    sb.Append($"{achievement.Name}");
+                                    sb.AppendLine();
+                                }
+
+                                await e.Channel.SendMessage(sb.ToString());
+
+                            });
+
+                        };
+                    }
+
+                });
+
+            _client.GetService<CommandService>().CreateCommand("fractal")
+                .Alias("f", "frac", "fractalorio", "factorio", "fractalicious", "fractalations", "fractallama",
+                    "factorials")
+                .Description("Shows daily fractals")
+                .Do(async e =>
+                {
+                    await Task.Run(async () =>
+                    {
+                        using (var client = new WebClient())
+                        {
+                            var json =
+                                client.DownloadString(
+                                    "https://api.guildwars2.com/v2/achievements/categories/88?wiki=1&lang=en");
+                            var fractalDailyIds = JsonConvert.DeserializeObject<DailyFractals>(json).Achievements;
+                            var fractalDailies = await GetAchievementsByIdsAsync(fractalDailyIds);
+
+                            var sb = new StringBuilder();
+                            sb.Append("__**Fractal Dailies**__");
+                            sb.AppendLine();
+                            sb.AppendLine();
+
+                            foreach (var achievement in fractalDailies)
+                            {
+                                if (achievement.Name.Contains("Tier 1")
+                                || achievement.Name.Contains("Tier 2")
+                                || achievement.Name.Contains("Tier 3"))
+                                    continue;
+
+                                sb.Append($"{achievement.Name.Replace("â€”", " ")}");
+                                sb.AppendLine();
+                            }
+
+                            await e.Channel.SendMessage(sb.ToString());
+                        }
+                    });
+
+
+
+                });
+
+            //_client.ExecuteAndWait(async () =>
+            //{
+            await Connect();
+            //});
+        }
+
+
+        private async Task<List<Achievement>> GetAchievementsByIdsAsync(IEnumerable<int> ids)
+        {
+            return await Task.Run(() =>
             {
-                await Connect();
+                using (var client = new WebClient())
+                {
+                    var json =
+                        client.DownloadString($"https://api.guildwars2.com/v2/achievements?ids={string.Join(",", ids)}");
+                    return JsonConvert.DeserializeObject<List<Achievement>>(json);
+                }
             });
         }
 
@@ -461,9 +583,9 @@ namespace DiscordBot
                         timer.Start = timer.Start.AddDays(1);
                     }
 
+
                     timer.Start = TimeZoneInfo.ConvertTimeFromUtc(timer.Start, TimeZoneInfo.Local);
                     timer.End = TimeZoneInfo.ConvertTimeFromUtc(timer.End, TimeZoneInfo.Local);
-
 
                     WorldBosses.Add(timer);
                 }
